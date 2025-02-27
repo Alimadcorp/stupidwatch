@@ -866,6 +866,7 @@
           if(state.name != undefined && state.name != null){
             stateName = state.name;
           }
+          document.getElementById("disname").innerHTML = stateName;
           if ((localStorage.getItem("addoffline") || "").startsWith("no")) {
             timeSinceSave = 0;
             state.isRunning = state.isLocked = false;
