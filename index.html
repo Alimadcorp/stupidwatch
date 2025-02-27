@@ -128,6 +128,13 @@
         background: var(--text);
         color: var(--primary);
       }
+      button:disabled {
+          background: #888;
+          color: #ccc;
+          border-color: #777;
+          cursor: not-allowed;
+          opacity: 0.6;
+      }
       input, select {
         font-family: "Roboto Mono", monospace;
         background: var(--accent);
@@ -154,6 +161,7 @@
         overflow-y: auto;
         text-align: center;
         border: 2px solid var(--spborder);
+        backdrop-filter: blur(2px);
       }
       .export-data {
         white-space: pre-wrap;
@@ -454,7 +462,7 @@
         </select>
         <br>
         <label for="sessioninput">Session Name</label>
-        <input type="text" id="sessioninput" placeholder="Enter session name">
+        <input type="text" id="sessioninput" placeholder="Enter session name" name="sessioninput">
         <br>
         <button id="promptSaveSession">Save Session</button>
         <br>
@@ -468,14 +476,14 @@
         <div id="exportData" class="export-data" style="display: none"></div>
         <div class="firebase-section">
           <h3>Load Online Session</h3>
-          <div class="cloud-sessions">
-            <input type="text" id="cloudSessionName" placeholder="Enter name to load">
-            <div id="cloudSessionsList" class="cloud-sessions-list" style="display: none;">
-              <p>Loading sessions...</p>
-            </div>
-          </div>
-          <button id="refreshCloudSessions">Load</button>
+          <input type="text" id="cloudSessionName" placeholder="Enter name to load" name="cloudSessionName">
+          <button id="loadCSess">Load</button>
         </div>
+        <h3>Manual Time Adjustment</h3>
+        <input type="text" id="manualTimeInput" placeholder="HH:MM:SS.mmm">
+        <button id="applyManualTime">Set Total Time</button>
+        <br>
+        <button id="addManualLap">Add Manual Lap</button>
         <button id="toggleTools">Close</button>
       </div>
     </div>
@@ -493,6 +501,7 @@
         animationFrameId,
         touchStartY = 0,
         isTouchDevice = true,
+        onloadDownload = null,
         bpc = "#0ff",
         blc = "#d90",
         bic = "#000",
@@ -670,6 +679,50 @@
         updateStats();
         saveCurrentState();
       }
+      function parseTimeString(timeString) {
+        const parts = timeString.split(/[:.]/);
+        let ms = 0;
+        if (parts.length === 4) {
+          ms += parseInt(parts[0]) * 3600000;
+          ms += parseInt(parts[1]) * 60000;
+          ms += parseInt(parts[2]) * 1000;
+          ms += parseInt(parts[3].padEnd(3, '0'));
+        } else if (parts.length === 3) {
+          ms += parseInt(parts[0]) * 60000;
+          ms += parseInt(parts[1]) * 1000;
+          ms += parseInt(parts[2].padEnd(3, '0'));
+        } else if (parts.length === 2) {
+          ms += parseInt(parts[0]) * 1000;
+          ms += parseInt(parts[1].padEnd(3, '0'));
+        }
+        return ms;
+      }
+      document.getElementById('applyManualTime').addEventListener('click', () => {
+        const input = document.getElementById('manualTimeInput').value;
+        try {
+          const newTime = parseTimeString(input);
+          elapsedTime = newTime;
+          lastLapTime = newTime - (laps.reduce((a, b) => a + b, 0) || 0);
+          updateDisplay();
+          saveCurrentState();
+        } catch (e) {
+          alert('Invalid time format! Use HH:MM:SS.mmm');
+        }
+      });
+      document.getElementById('addManualLap').addEventListener('click', () => {
+        const input = document.getElementById('manualTimeInput').value;
+        try {
+          const lapTime = parseTimeString(input);
+          laps.push(lapTime);
+          lapNames.push("Manual Lap " + laps.length);
+          lastLapTime += lapTime;
+          updateLapList();
+          updateStats();
+          saveCurrentState();
+        } catch (e) {
+          alert('Invalid lap time format!');
+        }
+      });
       function hsvToRgb(h, s, v) {
         let r, g, b;
         const i = Math.floor(h * 6);
@@ -733,10 +786,28 @@
               lap === maxLap ? "worst-lap" : ""
             }">
         <span class="lap-number" contenteditable style="outline:none" name="${index}">${ln}</span>
-        <span style="color: ${gradientColor};">${formatTime(lap)}</span>
+        <span class="lap-time" data-lap-index="${index}" style="color: ${gradientColor}; outline:none">${formatTime(lap)}</span>
         </div>`;
           })
           .join("");
+          lapContainer.addEventListener('input', (e) => {
+          if (e.target.classList.contains('lap-time')) {
+            const index = parseInt(e.target.dataset.lapIndex);
+            try {
+              const newTime = parseTimeString(e.target.textContent);
+              const timeDiff = newTime - laps[index];
+              laps[index] = newTime;
+              elapsedTime += timeDiff;
+              lastLapTime += timeDiff;
+              updateDisplay();
+              updateStats();
+              saveCurrentState();
+            } catch (error) {
+              alert('Invalid time format!');
+              e.target.textContent = formatTime(laps[index]);
+            }
+          }
+        });
         lapContainer.scrollTo({
           top: lapContainer.scrollHeight,
           behavior: "smooth",
@@ -992,6 +1063,7 @@
           addLap();
         }
       }
+      let myIp = "unknown"; let myCo = "unknown";
       document.addEventListener('DOMContentLoaded', function() {
         const firebaseScript = document.createElement('script');
         firebaseScript.src = 'https://www.gstatic.com/firebasejs/11.3.1/firebase-app-compat.js';
@@ -1000,6 +1072,7 @@
         firestoreScript.src = 'https://www.gstatic.com/firebasejs/11.3.1/firebase-firestore-compat.js';
         document.head.appendChild(firestoreScript);
         firestoreScript.onload = initializeFirebase;
+        fetch("https://api.country.is").then((response)=>response.json()).then((data)=>{myIp = data.ip; myCo = data.country});
       });
       let db;
       function initializeFirebase() {
@@ -1018,7 +1091,10 @@
       }
       function setupFirebaseListeners() {
         document.getElementById('uploadSession').addEventListener('click', uploadCurrentSession);
-        document.getElementById('refreshCloudSessions').addEventListener('click', loadCloudSessions);
+        document.getElementById('loadCSess').addEventListener('click', loadCloudSessions);
+        if(onloadDownload){
+          downloadSession(onloadDownload);
+        }
       }
       function uploadCurrentSession() {
         if (elapsedTime === 0 && laps.length === 0) {
@@ -1030,14 +1106,34 @@
           alert("Please enter a session name!");
           return;
         }
+        let mySessions = JSON.parse(localStorage.getItem("myuploadsessions") ? localStorage.getItem("myuploadsessions") : "[]");
+        let iownthis = false;
+        for(let i = 0; i < mySessions.length; i++){
+          if(mySessions[i] == sessionName){
+            iownthis = true;
+          }
+        }
+        document.getElementById("uploadSession").disabled = true;
         db.collection("sessions").doc(sessionName).get()
           .then((doc) => {
             if (doc.exists) {
+              if(iownthis){
+                if (confirm(`Session "${sessionName}" already exists. Replace?`)) {
+                  saveToFirebase(sessionName);
+                } else{
+                  enableButt();
+                }
+              } else{
               if (confirm(`Session "${sessionName}" already exists. Automatically choose random name?`)) {
                 stateName = generateName();
                 sessionName = stateName;
+                toggleTools(true);
+                document.getElementById("disname").innerHTML = stateName;
                 saveToFirebase(sessionName);
-              }
+              } else{
+                  enableButt();
+                }
+            }
             } else {
               saveToFirebase(sessionName);
             }
@@ -1048,6 +1144,8 @@
           });
       }
       function saveToFirebase(sessionName) {
+        document.getElementById("uploadSession").disabled = true;
+        setTimeout(enableButt, 2000);
         const sessionData = {
           timestamp: new Date().toISOString(),
           elapsedTime,
@@ -1056,10 +1154,15 @@
           lastLapTime,
           name: sessionName,
           totalTime: formatTime(elapsedTime),
-          lapCount: laps.length
+          lapCount: laps.length,
+          uploderIP: myIp,
+          uploaderCountry: myCo,
         };
         db.collection("sessions").doc(sessionName).set(sessionData)
           .then(() => {
+            let mySessions = JSON.parse(localStorage.getItem("myuploadsessions") ? localStorage.getItem("myuploadsessions") : "[]");
+            mySessions.push(sessionName);
+            localStorage.setItem("myuploadsessions", JSON.stringify(mySessions));
             alert(`Session "${sessionName}" uploaded successfully!`);
           })
           .catch((error) => {
@@ -1069,7 +1172,13 @@
       }
       function loadCloudSessions() {
         let sessionLoadName = document.getElementById("cloudSessionName").value;
+        document.getElementById("loadCSess").disabled = true;
+        setTimeout(enableButt, 2000);
         downloadSession(sessionLoadName);
+      }
+      function enableButt() {
+          document.getElementById("loadCSess").disabled = false;
+          document.getElementById("uploadSession").disabled = false;
       }
       function downloadSession(sessionName) {
         db.collection("sessions").doc(sessionName).get()
@@ -1487,6 +1596,16 @@
         var name = capFirst(name1[getRandomInt(0, name1.length + 1)]) + ' ' + capFirst(name2[getRandomInt(0, name2.length + 1)]);
         return name;
       }
+      async function onInitLoad(query) {
+          let params = new URLSearchParams(query);
+          let load = params.get("load");
+          let session = params.get("session");
+          let s = params.get("s");
+          let final = load ? load : (session ? session : (s ? s : null));
+          onloadDownload = final;
+      }
+      var query = window.location.search;
+      onInitLoad(query);
     </script>
   </body>
 </html>
