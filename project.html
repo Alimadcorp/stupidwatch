@@ -630,7 +630,6 @@
         return `${sign}${timeUnits} ${hours}:${minutes}:${seconds}.${milliseconds}`;
       }
       function updateDisplay() {
-        disname.innerHTML = stateName;
         display.innerHTML = formatTime(elapsedTime);
         currentLap.textContent = formatTime(elapsedTime - lastLapTime);
       }
