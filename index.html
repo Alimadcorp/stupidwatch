@@ -468,6 +468,8 @@
         <br>
         <button id="uploadSession">Upload Session</button>
         <br>
+        <button id="sharePage">Share</button>
+        <br>
         <select id="sessionSelect"></select>
         <br>
         <button id="loadSelectedSession">Load Selected Session</button>
@@ -535,6 +537,30 @@
           document.exitFullscreen();
         }
       }
+      document.getElementById("sharePage").onclick = sharePage;
+      async function sharePage() {
+        let mySessions = JSON.parse(localStorage.getItem("myuploadsessions") || "[]");
+    let iownthis = mySessions.includes(stateName);
+    if(!iownthis){
+    await uploadCurrentSession();}
+    let shareURL = "https://alimadcorp.github.io/stupidwatch?s=" + stateName;
+
+    if (navigator.share) {
+        navigator.share({
+            title: "Share uploaded session",
+            text: "Check out my new session!",
+            url: shareURL
+        }).catch(console.error);
+    } else {
+        try {
+            await navigator.clipboard.writeText(shareURL);
+            alert("Link copied to clipboard!");
+        } catch (err) {
+            console.error("Failed to copy:", err);
+            alert("Could not copy link.");
+        }
+    }
+}
       document.addEventListener('DOMContentLoaded', function() {
         window.addEventListener('popstate', function(event) {
           if (typeof toolsShown !== 'undefined' && toolsShown === true) {
@@ -715,8 +741,10 @@
           laps.push(lapTime);
           lapNames.push("Manual Lap " + laps.length);
           lastLapTime += lapTime;
+          elapsedTime = laps.reduce((sum, lap) => sum + lap, 0);
           updateLapList();
           updateStats();
+          updateDisplay();
           saveCurrentState();
         } catch (e) {
           alert('Invalid lap time format!');
@@ -1097,54 +1125,60 @@
           downloadSession(onloadDownload);
         }
       }
-      function uploadCurrentSession() {
-        if (elapsedTime === 0 && laps.length === 0) {
-          alert("No active session to upload!");
-          return;
-        }
-        let sessionName = stateName.trim();
-        if (!sessionName) {
-          alert("Please enter a session name!");
-          return;
-        }
-        let mySessions = JSON.parse(localStorage.getItem("myuploadsessions") ? localStorage.getItem("myuploadsessions") : "[]");
-        let iownthis = false;
-        for(let i = 0; i < mySessions.length; i++){
-          if(mySessions[i] == sessionName){
-            iownthis = true;
-          }
-        }
-        document.getElementById("uploadSession").disabled = true;
-        db.collection("sessions").doc(sessionName).get()
-          .then((doc) => {
-            if (doc.exists) {
-              if(iownthis){
+async function uploadCurrentSession() {
+    if (elapsedTime === 0 && laps.length === 0) {
+        alert("No active session to upload!");
+        return;
+    }
+
+    let sessionName = stateName.trim();
+    if (!sessionName) {
+        alert("Please enter a session name!");
+        return;
+    }
+
+    let mySessions = JSON.parse(localStorage.getItem("myuploadsessions") || "[]");
+    let iownthis = mySessions.includes(sessionName);
+
+    // Disable buttons safely
+    const shareButton = document.getElementById("sharePage");
+    const uploadButton = document.getElementById("uploadSession");
+    if (shareButton) shareButton.disabled = true;
+    if (uploadButton) uploadButton.disabled = true;
+
+    try {
+        let doc = await db.collection("sessions").doc(sessionName).get();
+
+        if (doc.exists) {
+            if (iownthis) {
                 if (confirm(`Session "${sessionName}" already exists. Replace?`)) {
-                  saveToFirebase(sessionName);
-                } else{
-                  enableButt();
+                    await saveToFirebase(sessionName);
+                } else {
+                    enableButt();
                 }
-              } else{
-              if (confirm(`Session "${sessionName}" already exists. Automatically choose random name?`)) {
-                stateName = generateName();
-                sessionName = stateName;
-                toggleTools(true);
-                document.getElementById("disname").innerHTML = stateName;
-                saveToFirebase(sessionName);
-              } else{
-                  enableButt();
-                }
-            }
             } else {
-              saveToFirebase(sessionName);
+                if (confirm(`Session "${sessionName}" already exists. Automatically choose a random name?`)) {
+                    stateName = generateName();
+                    sessionName = stateName;
+                    toggleTools(true);
+
+                    let displayName = document.getElementById("disname");
+                    if (displayName) displayName.innerHTML = stateName;
+
+                    await saveToFirebase(sessionName);
+                } else {
+                    enableButt();
+                }
             }
-          })
-          .catch((error) => {
-            console.error("Error uploading session: ", error);
-            alert("Failed to upload session. Please try again.");
-          });
-      }
-      function saveToFirebase(sessionName) {
+        } else {
+            await saveToFirebase(sessionName);
+        }
+    } catch (error) {
+        console.error("Error uploading session: ", error);
+        alert("Failed to upload session. Please try again.");
+    }
+}
+      async function saveToFirebase(sessionName) {
         document.getElementById("uploadSession").disabled = true;
         setTimeout(enableButt, 2000);
         const sessionData = {
@@ -1159,7 +1193,7 @@
           uploderIP: myIp,
           uploaderCountry: myCo,
         };
-        db.collection("sessions").doc(sessionName).set(sessionData)
+        await db.collection("sessions").doc(sessionName).set(sessionData)
           .then(() => {
             let mySessions = JSON.parse(localStorage.getItem("myuploadsessions") ? localStorage.getItem("myuploadsessions") : "[]");
             mySessions.push(sessionName);
@@ -1180,6 +1214,7 @@
       function enableButt() {
           document.getElementById("loadCSess").disabled = false;
           document.getElementById("uploadSession").disabled = false;
+          document.getElementById("sharePage").disabled = false;
       }
       function downloadSession(sessionName) {
         db.collection("sessions").doc(sessionName).get()
