@@ -811,8 +811,9 @@
           exportData.style.display = "none";
         }
       }
-      document.getElementById("sessioninput").addEventListener("onchange", (e) => {
-        console.log(e);
+      document.getElementById("sessioninput").addEventListener("change", function() {
+        stateName = this.value;
+        document.getElementById("disname").innerHTML = this.value;
       });
       function promptSaveSession() {
         const sessionName = document.getElementById("sessioninput").value;
