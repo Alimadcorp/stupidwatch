@@ -185,7 +185,55 @@
       .secondl {
         top: 27vh;
       }
-      /* Portrait orientation specific styles */
+      .session-header {
+        text-align: center;
+        padding: 10px;
+        background-color: rgba(0, 0, 0, 0.1);
+        border-radius: 5px;
+        margin-bottom: 10px;
+      }
+      #currentSessionName {
+        margin: 0;
+        font-size: 18px;
+      }
+      .firebase-section {
+        margin-top: 20px;
+        padding-top: 20px;
+      }
+      #cloudSessionName {
+        flex: 1;
+        margin-right: 10px;
+      }
+      .cloud-sessions {
+        margin-top: 15px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .cloud-sessions h4 {
+        margin-top: 0;
+        margin-bottom: 10px;
+      }
+      .cloud-sessions-list {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 5px;
+        padding: 10px;
+        background-color: rgba(0, 0, 0, 0.1);
+      }
+      .cloud-session-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .cloud-session-item:last-child {
+        border-bottom: none;
+      }
+      .cloud-session-item button {
+        margin-left: 10px;
+        padding: 3px 8px;
+        font-size: 12px;
+      }
       @media(orientation: portrait) {
         .container {
           flex: 1;
@@ -279,7 +327,6 @@
           max-height: 25vh;
         }
       }
-      /* Landscape orientation specific styles */
       @media (orientation: landscape) {
         .landscape-container {
           display: flex;
@@ -362,9 +409,10 @@
           padding: 5vh;
         }
         .modal-content {
+          max-height: 90vh;
           transform: scale(1) translateX(37.5vw);
           padding: 2vh;
-          width: 25vw;
+          width: max(25vw, 300px);
         }
         .modal-content button, .modal-content select, .modal-content input {
           width: 80%;
@@ -420,9 +468,9 @@
       </div>
       <button class="control-button" id="controlButton">Hold to Start</button>
       <div class="button-container">
-        <button onclick="resetTimer()" id="rest">Reset</button>
-        <button onclick="manualLap()">Add Lap</button>
-        <button onclick="toggleTools(true)">More</button>
+        <button id="rest">Reset</button>
+        <button id="manualLap">Add Lap</button>
+        <button id="toggleToolsTrue">More</button>
       </div>
     </div>
     <div class="tools-modal" id="toolsModal">
@@ -441,7 +489,7 @@
           <option value="forest">Forest Theme</option>
         </select>
         <br>
-        <button onclick="toggleFullScreen()">Toggle Fullscreen</button><br>
+        <button id="toggleFullScreen">Toggle Fullscreen</button><br>
         <select id="measureass">
           <option value="yes">Don't pause on exit</option>
           <option value="no">Pause on exit</option>
@@ -451,19 +499,41 @@
         <label for="sessioninput">Session Name</label>
         <input type="text" id="sessioninput" placeholder="Enter session name">
         <br>
-        <button onclick="promptSaveSession()">Save Session</button>
+        <button id="promptSaveSession">Save Session</button>
         <br>
         <select id="sessionSelect"></select>
         <br>
-        <button onclick="loadSelectedSession()">Load Selected Session</button>
+        <button id="loadSelectedSession">Load Selected Session</button>
         <br>
-        <button onclick="showExportData()">Export Data</button>
+        <div class="firebase-section">
+          <h3>Cloud Storage</h3>
+          <div class="session-management">
+            <button id="uploadSession">Upload Session</button>
+          </div>
+          <div class="cloud-sessions">
+            <h4>Load Online Session</h4>
+            <input type="text" id="cloudSessionName" placeholder="Enter name to load">
+            <div id="cloudSessionsList" class="cloud-sessions-list" style="display:none">
+              <p>Loading sessions...</p>
+            </div>
+          </div>
+          <button id="refreshCloudSessions">Refresh List</button>
+        </div>
+        <button id="showExportData">Export Data</button>
         <br>
         <div id="exportData" class="export-data" style="display: none"></div>
-        <button onclick="toggleTools(false)">Close</button>
+        <button id="toggleTools">Close</button>
       </div>
     </div>
-    <script>
+    <script type="module">
+      document.getElementById("toggleFullScreen").onclick = toggleFullScreen;
+      document.getElementById("promptSaveSession").onclick = promptSaveSession;
+      document.getElementById("loadSelectedSession").onclick = loadSelectedSession;
+      document.getElementById("showExportData").onclick = showExportData;
+      document.getElementById("toggleTools").onclick = function() { toggleTools(false); };
+      document.getElementById("rest").onclick = resetTimer;
+      document.getElementById("manualLap").onclick = manualLap;
+      document.getElementById("toggleToolsTrue").onclick = function() { toggleTools(true); };
       let tsls = 0, stateName = "New Session";
       let isRunning = false,
         isLocked = false,
@@ -854,9 +924,14 @@
         loadSession(key);
       }
       function loadSession(key) {
-        const sessionStr = localStorage.getItem(key);
+        let sessionStr;
+        if(key.elapsedTime == null || key.elapsedTime == undefined){
+          sessionStr = JSON.parse(localStorage.getItem(key));
+        }else{
+          sessionStr = key;
+        }
         if (sessionStr) {
-          const session = JSON.parse(sessionStr);
+          const session = sessionStr;
           const timeSinceSave = new Date() - new Date(session.timestamp);
           elapsedTime =
             session.elapsedTime + (session.isRunning ? timeSinceSave : 0);
@@ -927,6 +1002,158 @@
       function manualLap() {
         if (elapsedTime > 0) {
           addLap();
+        }
+      }
+      document.addEventListener('DOMContentLoaded', function() {
+        const firebaseScript = document.createElement('script');
+        firebaseScript.src = 'https://www.gstatic.com/firebasejs/11.3.1/firebase-app-compat.js';
+        document.head.appendChild(firebaseScript);
+        const firestoreScript = document.createElement('script');
+        firestoreScript.src = 'https://www.gstatic.com/firebasejs/11.3.1/firebase-firestore-compat.js';
+        document.head.appendChild(firestoreScript);
+        firestoreScript.onload = initializeFirebase;
+      });
+      let db;
+      function initializeFirebase() {
+        const firebaseConfig = {
+          apiKey: "AIzaSyDB4Q9QyPT-7knY1wyX2xsatXUjMdoD-nU",
+          authDomain: "stupidwatch-3571c.firebaseapp.com",
+          projectId: "stupidwatch-3571c",
+          storageBucket: "stupidwatch-3571c.firebasestorage.app",
+          messagingSenderId: "1081893342900",
+          appId: "1:1081893342900:web:6739bdc410a7649d9d11e1",
+          measurementId: "G-FVV4VRGHJT"
+        };
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        setupFirebaseListeners();
+      }
+      function setupFirebaseListeners() {
+        document.getElementById('uploadSession').addEventListener('click', uploadCurrentSession);
+        document.getElementById('refreshCloudSessions').addEventListener('click', loadCloudSessions);
+      }
+      function uploadCurrentSession() {
+        if (elapsedTime === 0 && laps.length === 0) {
+          alert("No active session to upload!");
+          return;
+        }
+        const sessionName = stateName.trim();
+        if (!sessionName) {
+          alert("Please enter a session name!");
+          return;
+        }
+        db.collection("sessions").doc(sessionName).get()
+          .then((doc) => {
+            if (doc.exists) {
+              if (confirm(`Session "${sessionName}" already exists. Automatically choose random name?`)) {
+                stateName = generateName();
+                sessionName = stateName;
+                saveToFirebase(sessionName);
+              }
+            } else {
+              saveToFirebase(sessionName);
+            }
+          })
+          .catch((error) => {
+            console.error("Error uploading session: ", error);
+            alert("Failed to upload session. Please try again.");
+          });
+      }
+      function saveToFirebase(sessionName) {
+        const sessionData = {
+          timestamp: new Date().toISOString(),
+          elapsedTime,
+          laps,
+          lapNames,
+          lastLapTime,
+          name: sessionName,
+          totalTime: formatTime(elapsedTime),
+          lapCount: laps.length
+        };
+        db.collection("sessions").doc(sessionName).set(sessionData)
+          .then(() => {
+            currentSessionName = sessionName;
+            updateSessionNameDisplay();
+            alert(`Session "${sessionName}" uploaded successfully!`);
+            loadCloudSessions();
+          })
+          .catch((error) => {
+            console.error("Error uploading session: ", error);
+            alert("Failed to upload session. Please try again.");
+          });
+      }
+      function loadCloudSessions() {
+        const cloudSessionsList = document.getElementById('cloudSessionsList');
+        cloudSessionsList.innerHTML = '<p>Loading sessions...</p>';
+        db.collection("stopwatchSessions").orderBy("timestamp", "desc").get()
+          .then((querySnapshot) => {
+            if (querySnapshot.empty) {
+              cloudSessionsList.innerHTML = '<p>No cloud sessions found.</p>';
+              return;
+            }
+            cloudSessionsList.innerHTML = '';
+            querySnapshot.forEach((doc) => {
+              const sessionData = doc.data();
+              const sessionItem = document.createElement('div');
+              sessionItem.className = 'cloud-session-item';
+              const sessionInfo = document.createElement('div');
+              sessionInfo.innerHTML = `
+                <strong>${doc.id}</strong><br>
+                <small>${new Date(sessionData.timestamp).toLocaleString()}</small><br>
+                <small>Time: ${sessionData.totalTime || formatTime(sessionData.elapsedTime)}, Laps: ${sessionData.lapCount || sessionData.laps.length}</small>
+              `;
+              const buttonContainer = document.createElement('div');
+              const downloadBtn = document.createElement('button');
+              downloadBtn.textContent = 'Load';
+              downloadBtn.addEventListener('click', () => downloadSession(doc.id));
+              const deleteBtn = document.createElement('button');
+              deleteBtn.textContent = 'Delete';
+              deleteBtn.addEventListener('click', () => deleteCloudSession(doc.id));
+              buttonContainer.appendChild(downloadBtn);
+              buttonContainer.appendChild(deleteBtn);
+              sessionItem.appendChild(sessionInfo);
+              sessionItem.appendChild(buttonContainer);
+              cloudSessionsList.appendChild(sessionItem);
+            });
+          })
+          .catch((error) => {
+            console.error("Error loading sessions: ", error);
+            cloudSessionsList.innerHTML = '<p>Error loading sessions. Please try again.</p>';
+          });
+      }
+      function downloadSession(sessionName) {
+        db.collection("sessions").doc(sessionName).get()
+          .then((doc) => {
+            if (doc.exists) {
+              const sessionData = doc.data();
+              if (isRunning) {
+                isRunning = false;
+                cancelAnimationFrame(animationFrameId);
+              }
+              loadSession(sessionData);
+              saveSession(sessionName);
+              alert(`Session "${sessionName}" loaded successfully!`);
+              toggleTools(false);
+            } else {
+              alert(`Session "${sessionName}" not found!`);
+            }
+          })
+          .catch((error) => {
+            console.error("Error downloading session: ", error);
+            alert("Failed to download session. Please try again.");
+          });
+      }
+      function deleteCloudSession(sessionName) {
+        if (confirm(`Are you sure you want to delete "${sessionName}"?`)) {
+          db.collection("stopwatchSessions").doc(sessionName).delete()
+            .then(() => {
+              alert(`Session "${sessionName}" deleted successfully!`);
+              loadCloudSessions();
+            })
+            .catch((error) => {
+              console.error("Error deleting session: ", error);
+              alert("Failed to delete session. Please try again.");
+            });
         }
       }
       controlButton.addEventListener("touchstart", (e) => {
@@ -1026,8 +1253,6 @@
       document.addEventListener("keydown", (event) => {
         txts = wtxts;
       });
-    </script>
-    <script>
       const themes = {
         dark: {
           "--primary": "#000",
@@ -1291,8 +1516,6 @@
         const savedTheme = localStorage.getItem("theme") || "dark";
         document.getElementById("themeSelect").value = savedTheme;
       });
-    </script>
-    <script>
       function capFirst(string) {
           return string.charAt(0).toUpperCase() + string.slice(1);
       }
